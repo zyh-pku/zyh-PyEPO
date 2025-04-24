@@ -36,12 +36,12 @@ if torch.cuda.is_available():
 
 
 
-##### 强制使用CPU
-# os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+# ##### 强制使用CPU
+# # os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
-device = torch.device("cpu")
-# Force JAX to use the CPU backend only (avoids CUDA OOM in JAX)
-os.environ['JAX_PLATFORMS'] = 'cpu'
+# device = torch.device("cpu")
+# # Force JAX to use the CPU backend only (avoids CUDA OOM in JAX)
+# os.environ['JAX_PLATFORMS'] = 'cpu'
 
 
 
