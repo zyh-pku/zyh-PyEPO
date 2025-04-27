@@ -16,7 +16,7 @@ from pyepo.model.opt import optModel
 import random
 from scipy.spatial import distance
 
-‘’‘
+'''
 class optDataset(Dataset):
     """
     This class is Torch Dataset for optimization problems.
@@ -107,7 +107,7 @@ class optDataset(Dataset):
             torch.FloatTensor(self.sols[index]),
             torch.FloatTensor(self.objs[index]),
         )
-’‘’
+'''
 
 
 class optDatasetKNN(optDataset):
@@ -195,7 +195,7 @@ class optDatasetKNN(optDataset):
                          + (1 - self.weight) * self.costs[knns].T
         return costs_knn
 
-class optDatasetTimeSeries(optDataset):
+class optDataset(Dataset):
     """
     This class extends optDataset to handle time series data for stocks.
     
@@ -268,13 +268,57 @@ class optDatasetTimeSeries(optDataset):
                 # 不需要填充，直接截取lookback天的数据
                 ts_feats = self.original_feats[start_idx:t+1]
             
-            # 将时间维度和特征维度重塑为一个大特征向量
+            # 将时间维度和特征维度重塑
             # 形状从 (lookback, N, k) 变为 (N, lookback，k)
             reshaped_feats = ts_feats.transpose(1, 0, 2)
             processed_feats.append(reshaped_feats)
         
         # 返回处理后的特征和成本
         return np.array(processed_feats), self.original_costs
+
+    def _getSols(self):
+        """
+        A method to get optimal solutions for all cost vectors
+        """
+        sols = []
+        objs = []
+        print("\nOptimizing for optDataset...", flush=True)
+        for c in tqdm(self.costs):
+            try:
+                sol, obj = self._solve(c)
+                # to numpy
+                if isinstance(sol, torch.Tensor):
+                    sol = sol.detach().cpu().numpy()
+            except:
+                raise ValueError(
+                    "For optModel, the method 'solve' should return solution vector and objective value."
+                )
+            sols.append(sol)
+            objs.append([obj])
+        return np.array(sols), np.array(objs)
+
+    def _solve(self, cost):
+        """
+        A method to solve optimization problem to get an optimal solution with given cost
+
+        Args:
+            cost (np.ndarray): cost of objective function
+
+        Returns:
+            tuple: optimal solution (np.ndarray) and objective value (float)
+        """
+        self.model.setObj(cost)
+        sol, obj = self.model.solve()
+        return sol, obj
+
+    def __len__(self):
+        """
+        A method to get data size
+
+        Returns:
+            int: the number of optimization problems
+        """
+        return len(self.costs)    
     
     def __getitem__(self, index):
         """
