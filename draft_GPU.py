@@ -26,6 +26,11 @@ from tqdm.auto import tqdm  # Progress bar
 from pyepo.data.dataset import optDataset
 import pyepo
 
+# Gurobi import for MarketNeutralGrbModel
+import gurobipy as gp
+from gurobipy import GRB
+from pyepo.model.grb import optGrbModel
+
 # Check and set up GPU
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
@@ -48,12 +53,40 @@ if torch.cuda.is_available():
 #############################################################################
 # DATA PREPARATION
 #############################################################################
-print("Loading and processing data...")
+print("Generating random data...")
 
-df = pl.read_parquet("data_sample.parquet")
-
+# Setting parameters
 k = 5  # number of x features
 m = 3  # number of y features
+N_symbol = 100  # Number of symbols to generate
+
+# Generate symbols: s1, s2, ..., s100
+symbols = [f's{i}' for i in range(1, N_symbol + 1)]
+
+# Generate time range: minutes from 2025-04-01 to 2025-04-01 01:59
+start_time = datetime(2025, 4, 1)
+end_time = datetime(2025, 4, 1, 1, 59)
+minutes_diff = int((end_time - start_time).total_seconds() / 60) + 1
+time_range = [start_time + timedelta(minutes=i) for i in range(minutes_diff)]
+
+# Create empty dataframe with desired columns
+columns = ['time', 'symbol'] + [f'x{i+1}' for i in range(k)] + [f'y{i+1}' for i in range(m)]
+data = []
+
+# Generate random data
+for time in time_range:
+    for symbol in symbols:
+        # Generate white noise for each x and y
+        x_values = np.random.normal(0, 1, k)
+        y_values = np.random.normal(0, 1, m)
+        
+        # Combine all values into a row
+        row = [time, symbol] + list(x_values) + list(y_values)
+        data.append(row)
+
+# Create DataFrame using Polars
+df = pl.DataFrame(data, schema=[(col, pl.Datetime if col == 'time' else pl.Utf8 if col == 'symbol' else pl.Float64) 
+                               for col in columns])
 
 y_col = 'y1'  # Specify the y column to be used for costs
 
@@ -109,22 +142,127 @@ x_train, x_test, c_train, c_test = train_test_split(features, costs, test_size=7
 print(f"Training set: {x_train.shape}, Test set: {x_test.shape}")
 
 #############################################################################
-# OPTIMIZATION MODEL SETUP
+# OPTIMIZATION PROBLEM PARAMETERS
 #############################################################################
-# Use actual dimensions from data or user-specified
-N = features.shape[1]  # Number of symbols (update hardcoded value)
-print(f"Using {N} symbols for optimization model")
+# Market neutral optimization model parameters from opt_time_compare.py
+N = features.shape[1]  # Number of assets, updated from data
+A = np.ones((1, N))
+b = np.array([1.0])
+l = np.zeros(N)
+u = np.zeros(N) + 1e6
 
-# Market neutral constraint (sum of weights = 1)
-A = np.ones((1, N))  # Create a 1×N matrix filled with 1's
-b = np.array([1])    # Create a 1D array with a single element 1
+# Generate random positive definite covariance matrix
+M = np.random.randn(N, N)
+cov_matrix = M.T @ M + np.eye(N) * 1e-3
 
-from pyepo.model.mpax import optMpaxModel
-optmodel_toy = optMpaxModel(A=A, b=b, use_sparse_matrix=False, minimize=False)
+# Risk and constraint parameters
+risk_f     = np.random.randn(N)
+risk_abs   = 1.5
+single_abs = 0.1
+l1_abs     = 1.0
+sigma_abs  = 2.5
+
+#############################################################################
+# MARKET NEUTRAL OPTIMIZATION MODEL
+#############################################################################
+class MarketNeutralGrbModel(optGrbModel):
+    def __init__(
+        self,
+        N,
+        A,
+        b,
+        l,
+        u,
+        minimize=False,
+        risk_f=None,
+        risk_abs=None,
+        single_abs=None,
+        l1_abs=None,
+        cov_matrix=None,
+        sigma_abs=None
+    ):
+        # 保存所有参数
+        self.N = N
+        self.A = A
+        self.b = b
+        self.l = l
+        self.u = u
+        self.minimize = minimize
+        self.risk_f = risk_f
+        self.risk_abs = risk_abs
+        self.single_abs = single_abs
+        self.l1_abs = l1_abs
+        self.cov_matrix = cov_matrix
+        self.sigma_abs = sigma_abs
+
+        super().__init__()
+
+    def _getModel(self):
+        # 新建 Gurobi 模型
+        m = gp.Model()
+
+        # 添加原始变量 x[i]
+        x = m.addVars(
+            self.N,
+            lb={i: float(self.l[i]) for i in range(self.N)},
+            ub={i: float(self.u[i]) for i in range(self.N)},
+            name="x"
+        )
+
+        # 用于 L1 约束的辅助变量 t[i]
+        t = m.addVars(self.N, lb=0.0, name="t")
+
+        # 设置优化方向
+        m.modelSense = GRB.MINIMIZE if self.minimize else GRB.MAXIMIZE
+
+        # ——— 1) 市场中性约束 sum A[0,i] * x[i] == b[0]
+        m.addConstr(
+            gp.quicksum(self.A[0, i] * x[i] for i in range(self.N)) == float(self.b[0]),
+            name="eq_sum"
+        )
+
+        # ——— 2) 风险约束 |risk_f' x| <= risk_abs
+        expr_r = gp.quicksum(self.risk_f[i] * x[i] for i in range(self.N))
+        m.addConstr(expr_r <= float(self.risk_abs), name="risk_ub")
+        m.addConstr(expr_r >= -float(self.risk_abs), name="risk_lb")
+
+        # ——— 3) 单项绝对值约束 |x_i| <= single_abs
+        for i in range(self.N):
+            m.addConstr(x[i] <=  float(self.single_abs),  name=f"single_ub_{i}")
+            m.addConstr(x[i] >= -float(self.single_abs), name=f"single_lb_{i}")
+
+        # ——— 4) L1 约束 ∑|x_i| <= l1_abs
+        #   实现方式： t[i] >=  x[i], t[i] >= -x[i], 然后 ∑ t[i] <= l1_abs
+        for i in range(self.N):
+            m.addConstr(t[i] >=  x[i], name=f"t_pos_{i}")
+            m.addConstr(t[i] >= -x[i], name=f"t_neg_{i}")
+        m.addConstr(t.sum() <= float(self.l1_abs), name="l1_norm")
+
+        # ——— 5) 二次型约束 x' * cov_matrix * x <= sigma_abs
+        #     向量化写法： x_vec @ cov_matrix @ x_vec
+        x_vec = np.array([x[i] for i in range(self.N)])
+        expr_q = x_vec @ self.cov_matrix @ x_vec
+        m.addQConstr(expr_q <= float(self.sigma_abs), name="sigma_qc")
+
+        return m, x
+
+# Create an instance of the market neutral model for testing
+market_neutral_model = MarketNeutralGrbModel(
+    N, A, b, l, u, minimize=False,
+    risk_f=risk_f, risk_abs=risk_abs,
+    single_abs=single_abs, l1_abs=l1_abs,
+    cov_matrix=cov_matrix, sigma_abs=sigma_abs
+)
+
+# Optionally, you can test the model here
+# c_test = np.random.rand(N)
+# market_neutral_model.setObj(c_test)
+# sol = market_neutral_model.solve()
+# print(f"Test solution objective value: {market_neutral_model.getObjVal()}")
 
 # Create datasets
-dataset_train = optDataset(optmodel_toy, x_train, c_train)
-dataset_test = optDataset(optmodel_toy, x_test, c_test)
+dataset_train = optDataset(market_neutral_model, x_train, c_train)
+dataset_test = optDataset(market_neutral_model, x_test, c_test)
 
 #############################################################################
 # DATA LOADERS WITH PREFETCHING
@@ -237,7 +375,7 @@ def trainModel(model, loss_func, method_name, num_epochs=5, lr=1e-3):
     
     # Initialize logs
     loss_log = []
-    loss_log_regret = [pyepo.metric.regret(model, optmodel_toy, loader_test)]
+    loss_log_regret = [pyepo.metric.regret(model, market_neutral_model, loader_test)]
     print(f"Initial regret: {loss_log_regret[0]*100:.4f}%")
     
     # Initialize elapsed time tracking
@@ -321,7 +459,7 @@ def trainModel(model, loss_func, method_name, num_epochs=5, lr=1e-3):
         # Compute regret on test set after each epoch
         with torch.no_grad():
             model.eval()  # Set model to evaluation mode
-            regret = pyepo.metric.regret(model, optmodel_toy, loader_test)
+            regret = pyepo.metric.regret(model, market_neutral_model, loader_test)
             model.train()  # Set back to training mode
             loss_log_regret.append(regret)
         
@@ -344,7 +482,7 @@ def trainModel(model, loss_func, method_name, num_epochs=5, lr=1e-3):
 # TRAINING EXECUTION 
 #############################################################################
 print("\nInitializing SPO+ loss function...")
-spop = pyepo.func.SPOPlus(optmodel_toy)
+spop = pyepo.func.SPOPlus(market_neutral_model)
 
 print("\nStarting model training...")
 loss_log, loss_log_regret = trainModel(
@@ -434,7 +572,7 @@ print(f"Model saved to {model_path}")
 # Final evaluation
 reg.eval()
 with torch.no_grad():
-    final_regret = pyepo.metric.regret(reg, optmodel_toy, loader_test)
+    final_regret = pyepo.metric.regret(reg, market_neutral_model, loader_test)
     print(f"Final test regret: {final_regret*100:.4f}%")
 
 print("Training complete!")
