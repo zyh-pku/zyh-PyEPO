@@ -18,10 +18,6 @@ import random
 from scipy.spatial import distance
 
 
-
-
-
-
 class optDataset(Dataset):
     """
     This class extends optDataset to handle time series data for stocks.
@@ -174,6 +170,7 @@ class optDataset(Dataset):
             torch.FloatTensor(self.sols[index]),
             torch.FloatTensor(self.objs[index]),
         )
+'''
 
 
 class optDatasetKNN(optDataset):
@@ -259,4 +256,5 @@ class optDatasetKNN(optDataset):
             # interpolation weight
             costs_knn[i] = self.weight * self.costs[i].reshape((-1, 1)) \
                          + (1 - self.weight) * self.costs[knns].T
+
         return costs_knn
