@@ -170,7 +170,7 @@ class optDataset(Dataset):
             torch.FloatTensor(self.sols[index]),
             torch.FloatTensor(self.objs[index]),
         )
-'''
+
 
 
 class optDatasetKNN(optDataset):
