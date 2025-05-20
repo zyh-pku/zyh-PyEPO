@@ -1,4 +1,5 @@
 # Byte-compiled / optimized / DLL files
+
 __pycache__/
 *.py[cod]
 *$py.class
@@ -130,3 +131,12 @@ logs/*
 wandb/*
 archives/*
 data/*
+00_portfolio_real_data/data/*
+00_portfolio_real_data/perp_futures_klines/*
+00_portfolio_real_data/aligned_crypto_data.parquet
+00_portfolio_real_data/get_data.ipynb
+00_portfolio_real_data/large_market_neutral_dataset.npz
+00_portfolio_real_data/main.html
+00_portfolio_real_data/model_iis.ilp
+00_portfolio_real_data/processed_crypto_data.csv
+00_portfolio_real_data/scratch_main.ipynb

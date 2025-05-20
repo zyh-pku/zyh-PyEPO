@@ -26,6 +26,7 @@ class optGrbModel(optModel):
 
     Attributes:
         _model (GurobiPy model): Gurobi model
+        x: variables
     """
 
     def __init__(self):
@@ -83,13 +84,34 @@ class optGrbModel(optModel):
         """
         self._model.update()
         self._model.optimize()
+        status = self._model.status
+            
+        if status == GRB.INFEASIBLE:
+            print("!!!!!!!!!!!")
+            print("求解状态:INFEASIBLE（不可行）")
+            print("模型不可行，开始计算 IIS …")
+            self._model.computeIIS()  # 计算最小不可行子系统
+    
+            # 可选：把 IIS 写到文件，在 Gurobi IDE 或文本中查看
+            self._model.write("model_iis.ilp")
+            print("IIS 写入 model_iis.ilp")
+    
+            # 打印哪些约束属于 IIS
+            for c in self._model.getConstrs():
+                if c.IISConstr:  # 属性为 True 表示此约束在 IIS 中
+                    print(f"IIS 约束: {c.ConstrName}")
+            raise RuntimeError("模型不可行，请检查以上 IIS 约束")
+        
+        elif status == GRB.UNBOUNDED:
+            print("求解状态:UNBOUNDED（无界）")
+    
         # solution
         if isinstance(self.x, gp.MVar):
             sol = self.x.x
         else:
             sol = [self.x[k].x for k in self.x]
         # objective value
-        obj = self._model.objVal
+        obj = self._model.ObjVal
         return sol, obj
 
     def copy(self):
