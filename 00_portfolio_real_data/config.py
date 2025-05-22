@@ -75,3 +75,6 @@ DROPOUT_RATE = 0.0
 
 NUM_EPOCHS = 5
 BATCH_SIZE = 8
+LR = 1e-3
+
+LSTM_SAVE_DIR = "./lstm"
