@@ -7,6 +7,7 @@ from multiprocessing import get_context, shared_memory, Process
 
 # Model imports
 from model_factory import build_market_neutral_model
+from config import *
 
 # PyEPO imports
 from pyepo.data.dataset import optDataset
@@ -28,11 +29,16 @@ from pyepo.model.copt import optCoptModel
 # MPAX
 from pyepo.model.mpax import optMpaxModel
 
+# PCA
+from sklearn.decomposition import PCA
+import pickle
 
-def run_batch_shared(shm_names, shapes, dtypes, feats_data, costs_data, lookback, padding_method,
-                      N, A, b, l, u, risk_f, risk_abs, single_abs, l1_abs, cov_matrix, sigma_abs):
+
+
+
+def run_batch_shared(shm_names, shapes, dtypes, feats_data, costs_data, N, A, b, l, u, risk_f, risk_abs, single_abs, l1_abs, cov_matrix, sigma_abs):
     model = build_market_neutral_model(N, A, b, l, u, risk_f, risk_abs, single_abs, l1_abs, cov_matrix, sigma_abs)
-    dataset = optDataset(model, feats_data, costs_data, lookback=lookback, padding_method=padding_method)
+    dataset = optDataset(model, feats_data, costs_data, lookback=LOOKBACK, padding_method=PADDING_METHOD)
 
     feats_shm = shared_memory.SharedMemory(name=shm_names['feats'])
     sols_shm = shared_memory.SharedMemory(name=shm_names['sols'])
@@ -56,23 +62,30 @@ def run_batch_shared(shm_names, shapes, dtypes, feats_data, costs_data, lookback
     gc.collect()
     
 
-def process_and_combine_shared(features, costs, batch_size=1000, lookback=5, padding_method='zero'):
+def process_and_combine_shared(features, costs, batch_size=1000, N=None, A=None, b=None, l=None, u=None, risk_f=None, risk_abs=None, single_abs=None, l1_abs=None, cov_matrix=None, sigma_abs=None):
     ctx = get_context('spawn')
     total_samples = len(features)
     all_feats, all_sols, all_objs = [], [], []
 
-    N = features.shape[1] 
-    A = np.ones((1, N))
-    b = np.array([1.0])
-    l = np.zeros(N)
-    u = np.zeros(N) + 1e6
-    M = np.random.randn(N, N)
-    cov_matrix = M.T @ M + np.eye(N) * 1e-3
-    risk_f     = np.random.randn(N)
-    risk_abs   = 1.5
-    single_abs = 0.1
-    l1_abs     = 1.0
-    sigma_abs  = 2.5
+    if N is None:
+        N = features.shape[1] 
+        A = np.ones((1, N))
+        b = np.array([1.0])
+        l = np.zeros(N)
+        u = np.zeros(N) + 1e6
+        # 把cov_matrix修改为costs的covariance
+        ## M = np.random.randn(N, N)
+        ## cov_matrix = M.T @ M + np.eye(N) * 1e-3
+        cov_matrix = np.cov(costs, rowvar=False, bias=False)
+        # 把risk_f修改为第一主成分
+        ## risk_f = np.random.randn(N)
+        pca = PCA(n_components=1)
+        risk_f = pca.fit_transform(cov_matrix).ravel()
+        
+        risk_abs   = 1.5
+        single_abs = 0.1
+        l1_abs     = 1.0
+        sigma_abs  = 2.5
 
     for i in range(0, total_samples, batch_size):
         start, end = i, min(i + batch_size, total_samples)
@@ -82,7 +95,7 @@ def process_and_combine_shared(features, costs, batch_size=1000, lookback=5, pad
         costs_batch = costs[start:end]
 
         shapes = {
-            'feats': (feats_batch.shape[0], feats_batch.shape[1], lookback, feats_batch.shape[2]),
+            'feats': (feats_batch.shape[0], feats_batch.shape[1], LOOKBACK, feats_batch.shape[2]),
             'sols': (feats_batch.shape[0], feats_batch.shape[1]),
             'objs': (feats_batch.shape[0],1)
         }
@@ -95,8 +108,7 @@ def process_and_combine_shared(features, costs, batch_size=1000, lookback=5, pad
 
         p = ctx.Process(
             target=run_batch_shared,
-            args=(shm_names, shapes, dtypes, feats_batch, costs_batch, lookback, padding_method,
-                  N, A, b, l, u, risk_f, risk_abs, single_abs, l1_abs, cov_matrix, sigma_abs)
+            args=(shm_names, shapes, dtypes, feats_batch, costs_batch, N, A, b, l, u, risk_f, risk_abs, single_abs, l1_abs, cov_matrix, sigma_abs)
         )
         p.start()
         p.join()
@@ -122,6 +134,6 @@ def process_and_combine_shared(features, costs, batch_size=1000, lookback=5, pad
         'costs': costs,
         'sols': np.concatenate(all_sols, axis=0),
         'objs': np.concatenate(all_objs, axis=0),
-        'lookback': lookback,
-        'padding_method': padding_method
+        'lookback': LOOKBACK,
+        'padding_method': PADDING_METHOD
     }
