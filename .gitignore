@@ -1,5 +1,6 @@
 # Byte-compiled / optimized / DLL files
 
+
 __pycache__/
 *.py[cod]
 *$py.class
@@ -19,6 +20,10 @@ lib/
 lib64/
 parts/
 sdist/
+00_portfolio_real_data/train_test_trial.ipynb
+00_portfolio_real_data/train_market_neutral_dataset.npz
+00_portfolio_real_data/test_data
+00_portfolio_real_data/train_data
 var/
 wheels/
 pip-wheel-metadata/

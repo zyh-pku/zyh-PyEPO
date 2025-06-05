@@ -16,9 +16,12 @@ ROOT_PATH = "/Users/tarothousand/Desktop/EndToEnd/my-PyEPO/00_portfolio_real_dat
 RAW_DATA_PATH = os.path.join(ROOT_PATH, "perp_futures_klines")
 PROCESSED_DATA_PATH = os.path.join(ROOT_PATH, "processed_crypto_data.csv")
 ALIGNED_CRYPTO_DATA_PATH = os.path.join(ROOT_PATH, "aligned_crypto_data.parquet")
-OPTDATA_DIR = "./data"
+
+TRAIN_OPTDATA_DIR = "./train_data"
+TEST_DATA_DIR = "./test_data"
 OPTDATA_NAME = "crypto_data"
-DATASET_DICT_PATH = os.path.join(ROOT_PATH, "large_market_neutral_dataset.npz")
+DATASET_DICT_PATH = os.path.join(ROOT_PATH, "train_market_neutral_dataset.npz")
+TEST_DATASET_DICT_PATH = os.path.join(ROOT_PATH, "test_market_neutral_dataset.npz")
 
 #############################################################################
 # OPT_DATASET PRECOMPUTATION
@@ -26,6 +29,7 @@ DATASET_DICT_PATH = os.path.join(ROOT_PATH, "large_market_neutral_dataset.npz")
 LOOKBACK = 5
 PRECOMPUTE_BATCH_SIZE = 500
 PADDING_METHOD = "zero"
+MARKET_MODEL_DIR = "market_neutral_model_params.pkl"
 
 
 #############################################################################
@@ -73,7 +77,7 @@ HIDDEN_DIM = 32
 LSTM_HIDDEN_DIM = 64
 DROPOUT_RATE = 0.0
 
-NUM_EPOCHS = 5
+NUM_EPOCHS = 3
 BATCH_SIZE = 8
 LR = 1e-3
 
