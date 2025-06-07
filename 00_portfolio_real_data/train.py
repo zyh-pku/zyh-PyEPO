@@ -5,7 +5,7 @@ from torch.amp import GradScaler, autocast
 
 import pyepo
 
-from config import DEVICE, BATCH_SIZE, NUM_EPOCHS, LR
+from config import DEVICE, BATCH_SIZE, NUM_EPOCHS
 from data_loader import device_loader
 
 

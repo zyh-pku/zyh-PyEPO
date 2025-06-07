@@ -42,10 +42,10 @@ def align_time_series_fast(df, fill_method='ffill', fill_value=0):
     return aligned_df.sort_values(['symbol', 'open_time']).reset_index(drop=True)
 
 
-
-#  efficient version using vectorized operations across all columns at once
+#efficient version using vectorized operations across all columns at once
+"""
 def minmaxscaler_by_symbol(df, feature_range=(-1, 1), target_columns=None, group_by_column='symbol'):
-    """
+    
     Ultra-efficient MinMaxScaler using vectorized groupby operations
     
     Parameters:
@@ -56,7 +56,6 @@ def minmaxscaler_by_symbol(df, feature_range=(-1, 1), target_columns=None, group
     
     Returns:
     - Scaled DataFrame
-    """
     # Determine columns to scale
     if target_columns is None:
         numeric_columns = df.select_dtypes(include=[np.number]).columns.tolist()
@@ -92,6 +91,72 @@ def minmaxscaler_by_symbol(df, feature_range=(-1, 1), target_columns=None, group
     scaled_df[target_columns] = scaled_values
     
     return scaled_df
+"""
+
+
+
+class GroupMinMaxScaler:
+    """
+    Ultra-efficient MinMaxScaler using vectorized groupby operations
+    
+    Parameters:
+    - df: DataFrame to scale
+    - feature_range: tuple of (min, max) to scale data to, default (-1, 1)
+    - target_columns: list of specific columns to scale
+    - group_by_column: column to group by for scaling
+    """
+    def __init__(self, feature_range=(-1, 1), target_columns=None, group_by_column='symbol'):
+        self.feature_min, self.feature_max = feature_range
+        self.feature_span = self.feature_max - self.feature_min
+        self.target_columns = target_columns
+        self.group_by = group_by_column
+        # 下面两个在 fit() 时会被赋值
+        self._mins = None    # DataFrame: index=symbol, cols=target_columns
+        self._ranges = None  # DataFrame: index=symbol, cols=target_columns
+
+    def fit(self, df):
+        # 自动选列
+        if self.target_columns is None:
+            numeric = df.select_dtypes(include=[np.number]).columns.tolist()
+            self.target_columns = [c for c in numeric if c not in [self.group_by]]
+        # 计算每组的 min/max/range
+        grp = df.groupby(self.group_by)[self.target_columns]
+        self._mins   = grp.min()
+        self._maxs   = grp.max()
+        self._ranges = self._maxs - self._mins
+        return self
+
+    def transform(self, df):
+        # 先把对应 symbol 的 mins 和 ranges merge 进来
+        # Merge mins
+        mins = (
+            df[[self.group_by]]
+            .merge(self._mins, left_on=self.group_by, right_index=True, how='left')
+            .set_index(df.index).fillna(self.feature_min)
+        )
+        ranges = (
+            df[[self.group_by]]
+            .merge(self._ranges, left_on=self.group_by, right_index=True, how='left')
+            .set_index(df.index).fillna(self.feature_span)
+        )
+
+        scaled = df.copy()
+        data = df[self.target_columns]
+
+        # 公式：(x - min) / range * span + feature_min, 对 range=0 的列直接赋 value=feature_min
+        scaled_vals = (data - mins[self.target_columns]) \
+                      .divide(ranges[self.target_columns].replace(0, np.nan)) \
+                      .multiply(self.feature_span) \
+                      .add(self.feature_min) \
+                      .fillna(self.feature_min)
+
+        scaled[self.target_columns] = scaled_vals
+        return scaled
+
+    def fit_transform(self, df):
+        return self.fit(df).transform(df)
+
+
 
 
 def pivot_features_and_costs(
