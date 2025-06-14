@@ -6,7 +6,7 @@ import gc
 from multiprocessing import get_context, shared_memory, Process
 
 # Model imports
-from model_factory import build_market_neutral_model
+from model_factory import build_market_neutral_model,build_market_neutral_model_testing
 from config import *
 
 # PyEPO imports
@@ -34,7 +34,7 @@ from sklearn.decomposition import PCA
 import pickle
 
 
-
+os.environ['GRB_LICENSE_FILE'] = os.path.expanduser("~/gurobi/gurobi.lic")
 
 def run_batch_shared(shm_names, shapes, dtypes, feats_data, costs_data, N, A, b, l, u, risk_f, risk_abs, single_abs, l1_abs, cov_matrix, sigma_abs):
     model = build_market_neutral_model(N, A, b, l, u, risk_f, risk_abs, single_abs, l1_abs, cov_matrix, sigma_abs)
@@ -61,6 +61,8 @@ def run_batch_shared(shm_names, shapes, dtypes, feats_data, costs_data, N, A, b,
     del dataset
     gc.collect()
     
+
+
 
 def process_and_combine_shared(features, costs, batch_size=1000, N=None, A=None, b=None, l=None, u=None, risk_f=None, risk_abs=None, single_abs=None, l1_abs=None, cov_matrix=None, sigma_abs=None):
     ctx = get_context('spawn')
@@ -137,3 +139,5 @@ def process_and_combine_shared(features, costs, batch_size=1000, N=None, A=None,
         'lookback': LOOKBACK,
         'padding_method': PADDING_METHOD
     }
+
+
