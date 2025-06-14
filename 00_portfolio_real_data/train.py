@@ -8,8 +8,30 @@ import pyepo
 from config import DEVICE, BATCH_SIZE, NUM_EPOCHS
 from data_loader import device_loader
 
+from test_regret import sequential_regret
 
-def trainModel(model, loss_func, method_name, loader_train, loader_test, market_neutral_model, num_epochs=5, lr=1e-3):
+from config import MARKET_MODEL_DIR,MARKET_MODEL_DIR_TESTING
+from model_factory import build_market_neutral_model_testing
+import pickle
+
+
+with open(MARKET_MODEL_DIR_TESTING, "rb") as f:
+    params_testing = pickle.load(f)
+    
+import os
+
+
+os.environ['GUROBI_HOME'] = '/usr/licensed/gurobi/12.0.0/linux64'
+os.environ['GRB_LICENSE_FILE'] = '/usr/licensed/gurobi/license/gurobi.lic'
+
+# 清除个人WLS许可证
+for var in ['WLSACCESSID', 'WLSSECRET']:
+    if var in os.environ:
+        del os.environ[var]
+
+
+
+def trainModel(model, loss_func, method_name, loader_train, loader_test, market_neutral_model, params_testing, loss_log, loss_log_regret, num_epochs=1000, lr=1e-3, initial=False):
     """
     Enhanced training function with:
     - Mixed precision for faster GPU training
@@ -33,10 +55,14 @@ def trainModel(model, loss_func, method_name, loader_train, loader_test, market_
     model.train()
     
     # Initialize logs
-    loss_log = []
-    # evaluate loss on whole test data
-    loss_log_regret = [pyepo.metric.regret(model, market_neutral_model, device_loader(loader_test))]
-    print(f"Initial regret: {loss_log_regret[0]*100:.4f}%")
+    
+    if initial: # evaluate loss on whole test data
+        ## 系统Gurobi
+        market_neutral_model_testing= build_market_neutral_model_testing(**params_testing)# need to initialize the testing Grb 
+        regret = sequential_regret(model, market_neutral_model_testing, device_loader(loader_test))
+        #loss_log_regret = [pyepo.metric.regret(model, market_neutral_model, device_loader(loader_test))]
+        
+        print(f"Initial regret: {regret*100:.4f}%")
     
     # Initialize elapsed time tracking
     training_start = time.time()
@@ -119,7 +145,9 @@ def trainModel(model, loss_func, method_name, loader_train, loader_test, market_
         # Compute regret on test set after each epoch
         with torch.no_grad():
             model.eval()  # Set model to evaluation mode
-            regret = pyepo.metric.regret(model, market_neutral_model, device_loader(loader_test))
+            market_neutral_model_testing= build_market_neutral_model_testing(**params_testing)# need to reinitialize the testing Grb 
+            regret = sequential_regret(model, market_neutral_model_testing, device_loader(loader_test))
+            #regret = pyepo.metric.regret(model, market_neutral_model, device_loader(loader_test, device))
             model.train()  # Set back to training mode
             loss_log_regret.append(regret)
         

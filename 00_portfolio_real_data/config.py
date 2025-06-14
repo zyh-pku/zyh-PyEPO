@@ -12,7 +12,7 @@ X_COLS = ['open', 'high', 'low', 'close', 'volume','count']
 #############################################################################
 # FILE PATHS
 #############################################################################
-ROOT_PATH = "/Users/tarothousand/Desktop/EndToEnd/my-PyEPO/00_portfolio_real_data"
+ROOT_PATH = "/scratch/gpfs/sl3965/datasets"
 RAW_DATA_PATH = os.path.join(ROOT_PATH, "perp_futures_klines")
 PROCESSED_DATA_PATH = os.path.join(ROOT_PATH, "processed_crypto_data.csv")
 ALIGNED_CRYPTO_DATA_PATH = os.path.join(ROOT_PATH, "aligned_crypto_data.parquet")
@@ -30,6 +30,7 @@ LOOKBACK = 5
 PRECOMPUTE_BATCH_SIZE = 500
 PADDING_METHOD = "zero"
 MARKET_MODEL_DIR = "market_neutral_model_params.pkl"
+MARKET_MODEL_DIR_TESTING = "market_neutral_model_params_testing.pkl"
 
 
 #############################################################################
@@ -49,6 +50,7 @@ RISK_ABS   = 1.5
 SINGLE_ABS = 0.1
 L1_ABS     = 1.0
 SIGMA_ABS  = 2.5
+TURNOVER   = 0.3
 
 
 #############################################################################
